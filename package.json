@@ -1,0 +1,52 @@
+{
+  "name": "phantom-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for mobile testing — iOS Simulator, Android Emulator, and real devices. 22 tools to test mobile apps from Claude Code.",
+  "type": "module",
+  "bin": {
+    "phantom-mcp": "./build/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nthimpulse/phantom-mcp"
+  },
+  "author": "Samuel Benitah",
+  "homepage": "https://github.com/nthimpulse/phantom-mcp#readme",
+  "scripts": {
+    "build": "tsc && chmod 755 build/index.js",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "mcp",
+    "ios",
+    "android",
+    "testing",
+    "mobile-testing",
+    "simulator",
+    "emulator",
+    "appium",
+    "adb",
+    "react-native",
+    "expo",
+    "claude-code"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "build",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "pngjs": "^7.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/pngjs": "^6.0.5",
+    "typescript": "^6.0.2"
+  }
+}
