@@ -58,23 +58,37 @@ export function autoStartIfNeeded(deviceName: string, platform: "ios" | "android
  * Auto-log a step from any tool. Fire-and-forget — never throws, never blocks the caller on failure.
  * Auto-starts a report if none is active.
  */
+// Screenshot every N steps to avoid bloating disk + context
+const SCREENSHOT_INTERVAL = 3;
+
+// Tools that are important enough to always get a screenshot
+const ALWAYS_SCREENSHOT_TOOLS = new Set(["assert_visible", "assert_not_visible", "accessibility_audit", "launch_app"]);
+
 export async function autoLogStep(tool: string, description: string, isError: boolean, platform: "ios" | "android", deviceId: string): Promise<void> {
   if (session && session.steps.length >= MAX_AUTO_STEPS) return;
-
-  // Auto-start if no session — makes testing fully automatic
-  if (!session) return; // Only log if explicitly started or auto-started via logAction
+  if (!session) return;
 
   const stepIndex = session.steps.length + 1;
 
   try {
     await mkdir(session.reportDir, { recursive: true });
-    const screenshotPath = `${session.reportDir}/step-${stepIndex}.png`;
+    let screenshotPath = "";
 
-    try {
-      const buffer = await takeScreenshot(platform, deviceId);
-      await writeFile(screenshotPath, buffer);
-    } catch (err) {
-      console.error(`[phantom] auto-report: screenshot failed for step ${stepIndex}: ${err instanceof Error ? err.message : err}`);
+    // Take screenshot only on errors, important tools, or every N steps
+    const shouldScreenshot = isError
+      || ALWAYS_SCREENSHOT_TOOLS.has(tool)
+      || stepIndex % SCREENSHOT_INTERVAL === 0
+      || stepIndex === 1; // Always screenshot first step
+
+    if (shouldScreenshot) {
+      screenshotPath = `${session.reportDir}/step-${stepIndex}.png`;
+      try {
+        const buffer = await takeScreenshot(platform, deviceId);
+        await writeFile(screenshotPath, buffer);
+      } catch (err) {
+        console.error(`[phantom] auto-report: screenshot failed for step ${stepIndex}: ${err instanceof Error ? err.message : err}`);
+        screenshotPath = "";
+      }
     }
 
     session.steps.push({
@@ -123,8 +137,10 @@ export async function endAutoReport(): Promise<{ reportPath: string; markdown: s
     const icon = step.status === "pass" ? "PASS" : "FAIL";
     md.push(`### Étape ${step.index} — [${icon}] ${step.tool}: ${step.description}`);
     md.push("");
-    md.push(`![Step ${step.index}](step-${step.index}.png)`);
-    md.push("");
+    if (step.screenshotPath) {
+      md.push(`![Step ${step.index}](step-${step.index}.png)`);
+      md.push("");
+    }
   }
 
   md.push("---");
