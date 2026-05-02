@@ -80,7 +80,7 @@ Aucun tool pour réordonner par drag (typique d'un EditItinerary qui a des `<Dra
 ### Workarounds
 1. **Tap deux fois sur l'item** — ouvre le menu Replace alternatif (si l'app le supporte)
 2. **Long-press + déplacement manuel** — non supporté actuellement
-3. **Test manuel** — Sam doit valider le drag-drop à la main, ou attendre une feature `drag_and_drop`
+3. **Test manuel** — le drag-drop doit être validé à la main, ou attendre une feature `drag_and_drop`
 
 ### Note
 Voir [Feature Request #5 — `drag_and_drop`](FEATURE_REQUESTS.md). XCUITest a `pressForDuration:thenDragToCoordinate:` qui pourrait être exposé.
