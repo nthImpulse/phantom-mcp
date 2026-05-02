@@ -169,6 +169,18 @@ Variables d'environnement optionnelles :
 
 ---
 
+## Contribuer
+
+Voir [CONTRIBUTING.md](CONTRIBUTING.md) pour le setup local, le pattern d'ajout d'un nouveau tool, les conventions de nommage et le workflow PR.
+
+Voir aussi :
+- [docs/LIMITATIONS.md](docs/LIMITATIONS.md) — limites connues + workarounds
+- [docs/PATTERNS.md](docs/PATTERNS.md) — recettes pratiques (DatePicker iOS, bottom sheets, etc.)
+- [docs/FEATURE_REQUESTS.md](docs/FEATURE_REQUESTS.md) — features prioritisees pour les prochaines versions
+- [docs/CHANGES_2026-04-30.md](docs/CHANGES_2026-04-30.md) — release notes v2.3.0
+
+---
+
 ## Troubleshooting
 
 ### WDA crash en boucle

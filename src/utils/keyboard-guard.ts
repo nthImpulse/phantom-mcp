@@ -7,7 +7,7 @@
  * guarantee uses identical heuristics, and bug fixes apply uniformly.
  */
 
-import { iosGetKeyboardBounds, iosDismissKeyboard, iosIsKeyboardVisible } from "../platforms/ios/wda.js";
+import { iosGetKeyboardBounds, iosDismissKeyboard } from "../platforms/ios/wda.js";
 import { androidIsKeyboardVisible, androidDismissKeyboard, androidGetScreenSize } from "../platforms/android/adb.js";
 
 /**
@@ -24,21 +24,19 @@ import { androidIsKeyboardVisible, androidDismissKeyboard, androidGetScreenSize 
  *     region on portrait phones. Above the bottom 40%, we don't dismiss to
  *     avoid surprising regressions on top-of-screen taps.
  *
- * iOS lightweight optimisation: this function does ONE wdaPost (`iosIsKeyboardVisible`)
- * and only fetches full bounds (`iosGetKeyboardBounds`) when the keyboard is
- * actually visible. The common case (keyboard not visible) costs ~1 source XML
- * fetch instead of 2.
+ * iOS performance: a single `iosGetKeyboardBounds()` call is enough to know
+ * both visibility AND geometry — it returns null when the keyboard is not
+ * visible, or when the source XML can't be parsed. We don't need a separate
+ * `iosIsKeyboardVisible()` call before it. So the cost is exactly ONE source
+ * XML fetch per tap, regardless of whether the keyboard is up.
  */
 export async function ensureKeyboardNotBlocking(
   platform: "ios" | "android",
   targetY: number,
 ): Promise<boolean> {
   if (platform === "ios") {
-    // Light early-exit: avoid fetching bounds when no keyboard is visible.
-    if (!(await iosIsKeyboardVisible())) return false;
-
+    // Single fetch: bounds === null means "no visible keyboard" (or unparseable).
     const bounds = await iosGetKeyboardBounds();
-    // Keyboard could have just disappeared between the two calls — treat as no-op
     if (!bounds) return false;
 
     const keyboardTop = bounds.y;

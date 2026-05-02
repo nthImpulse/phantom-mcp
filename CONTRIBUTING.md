@@ -38,6 +38,7 @@ src/
     types.ts                Types partagés (DeviceInfo, …)
   tools/                    24 tools (un fichier par tool, plus 3 utils)
   utils/
+    auto-report.ts          Rapport de test markdown auto (étape par étape)
     device-manager.ts       État de session (device actif, cache)
     device-prepare.ts       Logique partagée prepare_device + auto-trigger
     keyboard-guard.ts       Logique partagée auto-dismiss keyboard
@@ -45,6 +46,7 @@ src/
     screenshot.ts           Helpers screenshot
     xml.ts                  Parsing XML utility
 docs/                       LIMITATIONS.md / PATTERNS.md / FEATURE_REQUESTS.md / CHANGES_*.md
+CONTRIBUTING.md             ce fichier
 ```
 
 ## Ajouter un nouveau tool

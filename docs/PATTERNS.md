@@ -206,14 +206,14 @@ ORDER BY trip_id, day_idx;
 - Compter / statistiquer (% pet-friendly, nb trips avec X jours, etc.)
 
 ### Note
-Ne dispense pas du test UI — un bug peut être en UI uniquement (#54 wrong pet name) ou en DB uniquement (#56 weight NULL).
+Ne dispense pas du test UI — un bug peut être visible uniquement dans l'UI (mauvais libellé, mauvais composant rendu) ou uniquement en DB (champ jamais persisté malgré ce que montre le formulaire).
 
 ---
 
 ## Re-tester après kill+relaunch (proxy persistence)
 
 ### Pattern
-Après chaque mutation critique, valider à 4 niveaux (validé Pawfect Travels session 2026-04-30) :
+Après chaque mutation critique, valider à 4 niveaux :
 
 1. **Action UI** via Phantom MCP
 2. **Vérif UI immédiate** — `get_ui_tree` + `screenshot`
