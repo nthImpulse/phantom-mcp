@@ -433,3 +433,61 @@ export async function androidShake(): Promise<void> {
   await androidSwipe(cx + 100, cy, cx - 100, cy, 50);
   await androidSwipe(cx - 100, cy, cx + 100, cy, 50);
 }
+
+/**
+ * Detect if the Android soft keyboard is currently visible.
+ * Uses `dumpsys input_method` and checks the mInputShown flag.
+ *
+ * Why a multiline-anchored regex?
+ *   `dumpsys input_method` may print `mInputShown` on multiple lines
+ *   (history, server vs view state). Matching loosely can pick up an old
+ *   "true" value that no longer reflects what the user sees. We anchor on
+ *   the start-of-line and tolerate leading whitespace to target the active
+ *   block printed by recent Android versions.
+ */
+export async function androidIsKeyboardVisible(): Promise<boolean> {
+  try {
+    const out = await adb(["shell", "dumpsys", "input_method"]);
+    return /^\s*mInputShown=true\b/m.test(out);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Dismiss the Android soft keyboard.
+ * Uses BACK keyevent — this is the standard way to dismiss IMEs on Android.
+ *
+ * Note: BACK can sometimes navigate back if no IME is open. We check first.
+ *
+ * Returns true if the keyboard was dismissed, false if there was nothing to dismiss.
+ */
+export async function androidDismissKeyboard(): Promise<boolean> {
+  if (!(await androidIsKeyboardVisible())) return false;
+  await adb(["shell", "input", "keyevent", "111"]); // KEYCODE_ESCAPE — dismisses IME without navigating
+  await new Promise((r) => setTimeout(r, 200));
+  if (await androidIsKeyboardVisible()) {
+    // ESCAPE didn't work on this device, fall back to BACK
+    await adb(["shell", "input", "keyevent", "4"]); // KEYCODE_BACK
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return !(await androidIsKeyboardVisible());
+}
+
+/**
+ * Clear the Android clipboard.
+ * Uses a no-op input that overwrites whatever was in the clipboard.
+ *
+ * Note: Android doesn't expose a direct "clear clipboard" via adb without
+ * a helper app. The most portable approach is to set the clipboard to an
+ * empty string via service call (works on API 23+).
+ */
+export async function androidClearClipboard(): Promise<void> {
+  try {
+    // Service call to clipboard service to set an empty primary clip.
+    // This is best-effort; on some devices it fails silently — non-fatal.
+    await adb(["shell", "service", "call", "clipboard", "2", "i32", "0"]);
+  } catch {
+    // Non-fatal. The pbcopy+paste path is iOS-specific anyway.
+  }
+}

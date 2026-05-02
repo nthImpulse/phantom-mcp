@@ -4,6 +4,8 @@ import { setActiveDevice, getDeviceById, getAllDevicesIncludingShutdown, buildDe
 import { bootSimulator } from "../platforms/ios/simctl.js";
 import { bootEmulator, setAdbSerial } from "../platforms/android/adb.js";
 import { resetWdaForDeviceSwitch } from "../platforms/ios/wda.js";
+import { prepareDevice } from "../utils/device-prepare.js";
+import type { DeviceInfo } from "../platforms/types.js";
 import { clearElementCache } from "./ui-tree.js";
 
 /**
@@ -22,14 +24,31 @@ function configureForDevice(deviceId: string, platform: "ios" | "android"): void
   clearElementCache(); // Cache has coordinates from old device
 }
 
+/**
+ * Auto-prepare on set_device. Uses the shared `prepareDevice()` helper to
+ * guarantee a single source of truth with the explicit `prepare_device` tool.
+ *
+ * Notable difference: on iOS we set `skipKeyboardIfWdaNotReady: true` so we
+ * don't block the device-selection flow waiting up to 120s for WDA to come
+ * up. Users who specifically want the keyboard dismissed before WDA is ready
+ * can call `prepare_device` explicitly afterwards.
+ */
+async function autoPrepareDevice(dev: DeviceInfo): Promise<string[]> {
+  const { steps } = await prepareDevice(dev, {
+    skipKeyboardIfWdaNotReady: true,
+  });
+  return steps;
+}
+
 export function registerSetDevice(server: McpServer): void {
   server.tool(
     "set_device",
-    "Sélectionne le device à utiliser pour cette session de test. Si le device est éteint, il sera démarré automatiquement. Appelle list_devices d'abord pour voir les IDs.",
+    "Sélectionne le device à utiliser pour cette session de test. Si le device est éteint, il sera démarré automatiquement. Appelle list_devices d'abord pour voir les IDs. Auto-prépare le device (clear clipboard/status bar, dismiss keyboard, force QWERTY iOS) — opt-out via skip_setup=true.",
     {
       device_id: z.string().describe("L'ID du device (UDID iOS, serial Android, ou avd:NomAVD)"),
+      skip_setup: z.boolean().optional().default(false).describe("Si true, ne pas auto-préparer le device (clipboard/status bar/keyboard). Default: false."),
     },
-    async ({ device_id }) => {
+    async ({ device_id, skip_setup }) => {
       // Android AVD boot
       if (device_id.startsWith("avd:")) {
         const avdName = device_id.replace("avd:", "");
@@ -40,8 +59,15 @@ export function registerSetDevice(server: McpServer): void {
           }
           setActiveDevice(newDev.id);
           configureForDevice(newDev.id, "android");
+
+          let prepNote = "";
+          if (!skip_setup) {
+            const steps = await autoPrepareDevice(newDev);
+            prepNote = steps.length > 0 ? `\nAuto-prepare : ${steps.join(", ")}.` : "";
+          }
+
           return {
-            content: [{ type: "text", text: `Émulateur "${avdName}" démarré et sélectionné (${newDev.id}).\nTous les tools utiliseront ce device.` }],
+            content: [{ type: "text", text: `Émulateur "${avdName}" démarré et sélectionné (${newDev.id}).\nTous les tools utiliseront ce device.${prepNote}` }],
           };
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -73,10 +99,16 @@ export function registerSetDevice(server: McpServer): void {
       setActiveDevice(device.id);
       configureForDevice(device.id, device.platform);
 
+      let prepNote = "";
+      if (!skip_setup) {
+        const steps = await autoPrepareDevice(device);
+        prepNote = steps.length > 0 ? `\nAuto-prepare : ${steps.join(", ")}.` : "";
+      }
+
       const platform = device.platform === "ios" ? "🍎" : "🤖";
       const bootMsg = device.state === "shutdown" ? " (démarré automatiquement)" : "";
       return {
-        content: [{ type: "text", text: `${platform} Device sélectionné : **${device.name}**${bootMsg}\nTous les tools utiliseront ce device.` }],
+        content: [{ type: "text", text: `${platform} Device sélectionné : **${device.name}**${bootMsg}\nTous les tools utiliseront ce device.${prepNote}` }],
       };
     }
   );

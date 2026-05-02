@@ -179,3 +179,62 @@ export async function iosStartVideoRecord(deviceUdid: string, outputPath: string
   console.error(`[phantom] iOS video recording started (PID: ${proc.pid})`);
   return proc.pid ?? null;
 }
+
+/**
+ * Clear the simulator pasteboard (clipboard).
+ * Useful at session start to avoid leftover text from previous sessions
+ * being pasted accidentally during type_text fallbacks.
+ */
+export async function iosClearClipboard(deviceUdid: string): Promise<void> {
+  validateUdid(deviceUdid);
+  await new Promise<void>((resolve, reject) => {
+    const proc = spawn("xcrun", ["simctl", "pbcopy", deviceUdid]);
+    proc.stdin.end(); // empty stdin → empty clipboard
+    proc.on("close", (code) => code === 0 ? resolve() : reject(new Error(`pbcopy clear exit ${code}`)));
+    proc.on("error", reject);
+  });
+}
+
+/**
+ * Clear all status bar overrides (data network, time, battery, etc.).
+ * Useful at session start to ensure a clean device state.
+ */
+export async function iosClearStatusBar(deviceUdid: string): Promise<void> {
+  validateUdid(deviceUdid);
+  try {
+    await simctl(["status_bar", deviceUdid, "clear"]);
+  } catch {
+    // status_bar clear can fail on shutdown devices — non-fatal
+  }
+}
+
+/**
+ * Force the simulator's hardware keyboard layout to QWERTY (en_US).
+ * Mitigates AZERTY/system-locale issues for fallback typing paths.
+ *
+ * Note: pbcopy+Cmd+V (default in iosTypeText) is already keyboard-layout
+ * agnostic, but this helps when WDA falls back to direct keystroke typing
+ * or for tests that rely on hardware keyboard simulation.
+ *
+ * Requires the simulator to pick up the new defaults — applied immediately
+ * for new keyboard sessions, but a fresh app launch may be needed for
+ * already-running apps to fully respect the new layout.
+ */
+export async function iosForceKeyboardQwerty(deviceUdid: string): Promise<void> {
+  validateUdid(deviceUdid);
+  try {
+    await simctl([
+      "spawn",
+      deviceUdid,
+      "defaults",
+      "write",
+      "-g",
+      "AppleKeyboards",
+      "-array",
+      "en_US@hw=US;sw=QWERTY",
+    ]);
+  } catch (err) {
+    // Non-fatal — log and continue. The pbcopy+paste path doesn't depend on this.
+    console.error(`[phantom] iosForceKeyboardQwerty failed (non-fatal): ${err instanceof Error ? err.message : err}`);
+  }
+}

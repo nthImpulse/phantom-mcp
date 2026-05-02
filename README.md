@@ -1,6 +1,6 @@
 # phantom-mcp
 
-Serveur MCP qui permet a Claude Code de voir et controler des simulateurs iOS, emulateurs Android, et vrais devices. 22 tools pour tester des apps mobiles sans quitter le terminal.
+Serveur MCP qui permet a Claude Code de voir et controler des simulateurs iOS, emulateurs Android, et vrais devices. 24 tools pour tester des apps mobiles sans quitter le terminal.
 
 Claude peut prendre des screenshots, lire l'ecran, taper, scroller, remplir des champs, verifier des assertions, enregistrer des videos — automatiquement, sur iOS et Android.
 
@@ -69,13 +69,14 @@ claude mcp add -s user phantom -- node "$(pwd)/build/index.js"
 
 ---
 
-## Les 22 tools
+## Les 24 tools
 
 ### Device management
 | Tool | Description |
 |------|-------------|
 | `list_devices` | Liste tous les devices (iOS sims + Android emus + vrais devices) |
-| `set_device` | Selectionne le device actif. Boot auto si eteint |
+| `set_device` | Selectionne le device actif. Boot auto si eteint. Auto-prepare le device (opt-out via skip_setup) |
+| `prepare_device` | Met le device dans un etat propre : clear clipboard / status bar overrides / dismiss keyboard / force QWERTY iOS |
 
 ### Observation
 | Tool | Description |
@@ -94,10 +95,11 @@ claude mcp add -s user phantom -- node "$(pwd)/build/index.js"
 ### Interaction
 | Tool | Description |
 |------|-------------|
-| `tap` | Tape (par index, coordonnees, ou texte) |
+| `tap` | Tape (par index, coordonnees, ou texte). Auto-dismiss du clavier si la cible est masquee |
 | `long_press` | Appui long (menus contextuels) |
-| `type_text` | Saisie de texte avec option clear |
+| `type_text` | Saisie de texte avec option clear, et option verify pour relire la valeur apres typing |
 | `swipe` | Swipe (up/down/left/right) |
+| `dismiss_keyboard` | Ferme le clavier soft (no-op si pas visible) |
 
 ### Navigation
 | Tool | Description |
@@ -167,6 +169,18 @@ Variables d'environnement optionnelles :
 
 ---
 
+## Contribuer
+
+Voir [CONTRIBUTING.md](CONTRIBUTING.md) pour le setup local, le pattern d'ajout d'un nouveau tool, les conventions de nommage et le workflow PR.
+
+Voir aussi :
+- [docs/LIMITATIONS.md](docs/LIMITATIONS.md) — limites connues + workarounds
+- [docs/PATTERNS.md](docs/PATTERNS.md) — recettes pratiques (DatePicker iOS, bottom sheets, etc.)
+- [docs/FEATURE_REQUESTS.md](docs/FEATURE_REQUESTS.md) — features prioritisees pour les prochaines versions
+- [docs/CHANGES_2026-04-30.md](docs/CHANGES_2026-04-30.md) — release notes v2.3.0
+
+---
+
 ## Troubleshooting
 
 ### WDA crash en boucle
@@ -203,7 +217,7 @@ ls ~/Library/Android/sdk/platform-tools/adb
 ```
 phantom/
   src/
-    index.ts                Point d'entree MCP (22 tools)
+    index.ts                Point d'entree MCP (24 tools)
     platforms/
       types.ts              Interfaces communes
       ios/
@@ -211,7 +225,7 @@ phantom/
         wda.ts               Client WDA + auto-launch
       android/
         adb.ts               Wrapper ADB complet
-    tools/                   22 tools (19 fichiers)
+    tools/                   24 tools (21 fichiers)
     utils/
       device-manager.ts      Detection + routing multi-device
       xml.ts                 Parser XML partage

@@ -4,6 +4,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerListDevices } from "./tools/devices.js";
 import { registerSetDevice } from "./tools/set-device.js";
+import { registerPrepareDevice } from "./tools/prepare-device.js";
+import { registerDismissKeyboard } from "./tools/dismiss-keyboard.js";
 import { registerScreenshot } from "./tools/screenshot.js";
 import { registerGetUiTree } from "./tools/ui-tree.js";
 import { registerTap } from "./tools/tap.js";
@@ -24,12 +26,13 @@ import { registerMultiDevice } from "./tools/multi-device.js";
 
 const server = new McpServer({
   name: "phantom",
-  version: "2.2.0",
+  version: "2.3.0",
 });
 
 // Device management
 registerListDevices(server);
 registerSetDevice(server);
+registerPrepareDevice(server);
 
 // Observation
 registerScreenshot(server);
@@ -46,6 +49,7 @@ registerTap(server);
 registerLongPress(server);
 registerTypeText(server);
 registerSwipe(server);
+registerDismissKeyboard(server);
 
 // Navigation
 registerDeepLink(server);
@@ -69,7 +73,7 @@ registerMultiDevice(server);
 try {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[phantom] Server v2.2.0 started — 22 tools — iOS + Android");
+  console.error("[phantom] Server v2.3.0 started — 24 tools — iOS + Android");
 } catch (err) {
   console.error(`[phantom] Failed to start: ${err instanceof Error ? err.message : err}`);
   process.exit(1);

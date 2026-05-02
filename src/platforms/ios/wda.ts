@@ -381,4 +381,113 @@ export async function iosLongPress(x: number, y: number, durationSec: number = 1
   await wdaPost("/wda/touchAndHold", { x, y, duration: durationSec });
 }
 
+/**
+ * Detect if the iOS soft keyboard is currently visible.
+ * Looks for an XCUIElementTypeKeyboard in the source tree.
+ */
+export async function iosIsKeyboardVisible(): Promise<boolean> {
+  try {
+    const response = await wdaGet("/source") as { value: unknown };
+    const xml = typeof response.value === "string" ? response.value : "";
+    return /<XCUIElementTypeKeyboard\b[^>]*\bvisible="true"/.test(xml);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get the bounds of the visible keyboard, if any.
+ * Returns null if the keyboard is not visible.
+ *
+ * Implementation note: WDA serialises XML attributes in an order that varies
+ * with the underlying iOS / XCTest version. We extract the entire keyboard
+ * tag opening, then parse each attribute independently — order-independent
+ * and tolerant to extra attributes between the ones we need.
+ */
+export async function iosGetKeyboardBounds(): Promise<{ x: number; y: number; width: number; height: number } | null> {
+  try {
+    const response = await wdaGet("/source") as { value: unknown };
+    const xml = typeof response.value === "string" ? response.value : "";
+    const tagMatch = xml.match(/<XCUIElementTypeKeyboard\b([^>]*)>/);
+    if (!tagMatch) return null;
+    const attrs = tagMatch[1];
+
+    // Skip elements that aren't actually visible.
+    if (!/\bvisible="true"/.test(attrs)) return null;
+
+    const get = (name: string): number | null => {
+      const m = attrs.match(new RegExp(`\\b${name}="([\\d.\\-]+)"`));
+      return m ? parseFloat(m[1]) : null;
+    };
+
+    const x = get("x");
+    const y = get("y");
+    const width = get("width");
+    const height = get("height");
+
+    // Reject any incomplete extraction — better to report no-bounds than
+    // pass garbage to the caller (which would mis-target dismissals).
+    if (x === null || y === null || width === null || height === null) return null;
+    return { x, y, width, height };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read the live `value` attribute of a field on iOS via WDA.
+ * Used by `type_text` verify=true to confirm what was actually typed.
+ *
+ * Searches for a field matching `elementText` (label/value/name/placeholder),
+ * then fetches its current `value` attribute live (not from cache).
+ *
+ * Returns null if the element isn't found or has no value attribute.
+ */
+export async function iosReadElementValue(elementText: string): Promise<string | null> {
+  try {
+    const safe = escapePredicateText(elementText);
+    const findRes = await wdaPost("/element", {
+      using: "-ios predicate string",
+      value: `label CONTAINS[cd] '${safe}' OR value CONTAINS[cd] '${safe}' OR name CONTAINS[cd] '${safe}' OR placeholderValue CONTAINS[cd] '${safe}'`,
+    }) as { value?: { ELEMENT?: string } };
+    const elementId = findRes.value?.ELEMENT;
+    if (!elementId) return null;
+
+    const valueRes = await wdaGet(`/element/${elementId}/attribute/value`) as { value?: string | null };
+    if (valueRes.value === null || valueRes.value === undefined) return null;
+    return String(valueRes.value);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Dismiss the iOS soft keyboard by tapping outside it.
+ * Strategy:
+ *   1. If keyboard not visible → no-op (returns false)
+ *   2. Otherwise, tap on a safe coordinate above the keyboard
+ *      (between the navigation bar and the keyboard top)
+ *
+ * Note: iOS doesn't have a system-level "dismiss keyboard" action exposed
+ * via WDA. The "tap outside" pattern is the most reliable.
+ *
+ * Returns true if the keyboard was dismissed, false if there was nothing to dismiss.
+ */
+export async function iosDismissKeyboard(): Promise<boolean> {
+  const bounds = await iosGetKeyboardBounds();
+  if (!bounds) return false;
+
+  // Tap a safe spot above the keyboard.
+  // y = midpoint between top of keyboard and the navigation area (~y=110)
+  const safeY = Math.max(110, Math.floor(bounds.y / 2));
+  const safeX = Math.floor(bounds.x + bounds.width / 2);
+
+  await iosTap(safeX, safeY);
+  // Give iOS time to process the dismiss
+  await new Promise((r) => setTimeout(r, 300));
+
+  // Verify the keyboard actually disappeared
+  return !(await iosIsKeyboardVisible());
+}
+
 
