@@ -398,20 +398,64 @@ export async function iosIsKeyboardVisible(): Promise<boolean> {
 /**
  * Get the bounds of the visible keyboard, if any.
  * Returns null if the keyboard is not visible.
+ *
+ * Implementation note: WDA serialises XML attributes in an order that varies
+ * with the underlying iOS / XCTest version. We extract the entire keyboard
+ * tag opening, then parse each attribute independently — order-independent
+ * and tolerant to extra attributes between the ones we need.
  */
 export async function iosGetKeyboardBounds(): Promise<{ x: number; y: number; width: number; height: number } | null> {
   try {
     const response = await wdaGet("/source") as { value: unknown };
     const xml = typeof response.value === "string" ? response.value : "";
-    // Extract the keyboard element's bounding box from the source XML
-    const m = xml.match(/<XCUIElementTypeKeyboard\b[^>]*\bx="([\d.]+)"[^>]*\by="([\d.]+)"[^>]*\bwidth="([\d.]+)"[^>]*\bheight="([\d.]+)"[^>]*\bvisible="true"/);
-    if (!m) return null;
-    return {
-      x: parseFloat(m[1]),
-      y: parseFloat(m[2]),
-      width: parseFloat(m[3]),
-      height: parseFloat(m[4]),
+    const tagMatch = xml.match(/<XCUIElementTypeKeyboard\b([^>]*)>/);
+    if (!tagMatch) return null;
+    const attrs = tagMatch[1];
+
+    // Skip elements that aren't actually visible.
+    if (!/\bvisible="true"/.test(attrs)) return null;
+
+    const get = (name: string): number | null => {
+      const m = attrs.match(new RegExp(`\\b${name}="([\\d.\\-]+)"`));
+      return m ? parseFloat(m[1]) : null;
     };
+
+    const x = get("x");
+    const y = get("y");
+    const width = get("width");
+    const height = get("height");
+
+    // Reject any incomplete extraction — better to report no-bounds than
+    // pass garbage to the caller (which would mis-target dismissals).
+    if (x === null || y === null || width === null || height === null) return null;
+    return { x, y, width, height };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read the live `value` attribute of a field on iOS via WDA.
+ * Used by `type_text` verify=true to confirm what was actually typed.
+ *
+ * Searches for a field matching `elementText` (label/value/name/placeholder),
+ * then fetches its current `value` attribute live (not from cache).
+ *
+ * Returns null if the element isn't found or has no value attribute.
+ */
+export async function iosReadElementValue(elementText: string): Promise<string | null> {
+  try {
+    const safe = escapePredicateText(elementText);
+    const findRes = await wdaPost("/element", {
+      using: "-ios predicate string",
+      value: `label CONTAINS[cd] '${safe}' OR value CONTAINS[cd] '${safe}' OR name CONTAINS[cd] '${safe}' OR placeholderValue CONTAINS[cd] '${safe}'`,
+    }) as { value?: { ELEMENT?: string } };
+    const elementId = findRes.value?.ELEMENT;
+    if (!elementId) return null;
+
+    const valueRes = await wdaGet(`/element/${elementId}/attribute/value`) as { value?: string | null };
+    if (valueRes.value === null || valueRes.value === undefined) return null;
+    return String(valueRes.value);
   } catch {
     return null;
   }

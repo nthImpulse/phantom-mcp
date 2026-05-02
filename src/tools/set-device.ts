@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { setActiveDevice, getDeviceById, getAllDevicesIncludingShutdown, buildDeviceSelectionPrompt } from "../utils/device-manager.js";
-import { bootSimulator, iosClearClipboard, iosClearStatusBar, iosForceKeyboardQwerty } from "../platforms/ios/simctl.js";
-import { bootEmulator, setAdbSerial, androidClearClipboard, androidDismissKeyboard } from "../platforms/android/adb.js";
-import { ensureWdaRunning, resetWdaForDeviceSwitch, iosDismissKeyboard, iosIsKeyboardVisible } from "../platforms/ios/wda.js";
+import { bootSimulator } from "../platforms/ios/simctl.js";
+import { bootEmulator, setAdbSerial } from "../platforms/android/adb.js";
+import { resetWdaForDeviceSwitch } from "../platforms/ios/wda.js";
+import { prepareDevice } from "../utils/device-prepare.js";
 import type { DeviceInfo } from "../platforms/types.js";
 import { clearElementCache } from "./ui-tree.js";
 
@@ -24,55 +25,18 @@ function configureForDevice(deviceId: string, platform: "ios" | "android"): void
 }
 
 /**
- * Auto-prepare a freshly selected device into a clean state.
- * Same logic as the `prepare_device` tool but called inline so users get
- * predictable test sessions without an extra tool call.
+ * Auto-prepare on set_device. Uses the shared `prepareDevice()` helper to
+ * guarantee a single source of truth with the explicit `prepare_device` tool.
  *
- * Best-effort: any individual step failure is non-fatal. The device is
- * still selected even if prepare partially fails.
- *
- * Returns a list of human-readable steps performed (for the response message).
+ * Notable difference: on iOS we set `skipKeyboardIfWdaNotReady: true` so we
+ * don't block the device-selection flow waiting up to 120s for WDA to come
+ * up. Users who specifically want the keyboard dismissed before WDA is ready
+ * can call `prepare_device` explicitly afterwards.
  */
 async function autoPrepareDevice(dev: DeviceInfo): Promise<string[]> {
-  const steps: string[] = [];
-
-  if (dev.platform === "ios") {
-    try {
-      await iosClearClipboard(dev.id);
-      steps.push("clipboard cleared");
-    } catch { /* non-fatal */ }
-
-    try {
-      await iosClearStatusBar(dev.id);
-      steps.push("status bar cleared");
-    } catch { /* non-fatal */ }
-
-    try {
-      await iosForceKeyboardQwerty(dev.id);
-      steps.push("keyboard QWERTY enforced");
-    } catch { /* non-fatal */ }
-
-    // WDA-dependent step. If WDA isn't ready yet, we silently skip
-    // (the user can call dismiss_keyboard later if needed).
-    try {
-      const wda = await ensureWdaRunning(dev);
-      if (wda.ready && (await iosIsKeyboardVisible())) {
-        await iosDismissKeyboard();
-        steps.push("keyboard dismissed");
-      }
-    } catch { /* non-fatal */ }
-  } else {
-    try {
-      await androidClearClipboard();
-      steps.push("clipboard cleared");
-    } catch { /* non-fatal */ }
-
-    try {
-      const dismissed = await androidDismissKeyboard();
-      if (dismissed) steps.push("keyboard dismissed");
-    } catch { /* non-fatal */ }
-  }
-
+  const { steps } = await prepareDevice(dev, {
+    skipKeyboardIfWdaNotReady: true,
+  });
   return steps;
 }
 

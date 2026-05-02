@@ -1,50 +1,56 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { resolveDevice } from "../utils/device-manager.js";
-import { ensureWdaRunning, iosTypeText } from "../platforms/ios/wda.js";
+import { ensureWdaRunning, iosTypeText, iosReadElementValue } from "../platforms/ios/wda.js";
 import { androidTypeText, androidTap, androidClearTextField } from "../platforms/android/adb.js";
 import { findElementByText } from "./ui-tree.js";
 import { logAction, getReportSuffix } from "../utils/tool-wrapper.js";
 
 /**
- * After typing, look up the field again and verify the actual value matches
- * what we asked to type. Detects autocomplete-pickers that intercept keystrokes
- * (the common cause of "av" appearing instead of "Paris" in field-with-suggestions).
+ * Result of a typed-value verification.
  *
- * Returns { ok: true } if values match, otherwise { ok: false, actual }.
+ * - `ok: true` means we have a confirmed match (or we couldn't verify and
+ *   chose not to flag — `skipped` will be true in that case).
+ * - `ok: false` means we have evidence the typed text is NOT in the field.
  *
- * iOS-only for now (uses the WDA active-element/value endpoint via re-fetching
- * the source). Android value verification is harder via dumpsys and would
- * require an extra adb roundtrip per type — skipped for now.
+ * `actual` carries the live value when we got one and it didn't match.
+ * `skipped` indicates verification was not actually performed (no element
+ * text was provided, platform unsupported, or the field couldn't be re-read).
  */
 async function verifyTypedValue(
   expected: string,
   elementText: string | undefined,
   platform: "ios" | "android",
   deviceId: string,
-): Promise<{ ok: boolean; actual?: string }> {
-  if (platform !== "ios") return { ok: true }; // skip Android verification
+): Promise<{ ok: boolean; actual?: string; skipped?: boolean; reason?: string }> {
+  // Verification needs an element selector to re-read after typing
+  if (!elementText) return { ok: true, skipped: true, reason: "no element_text provided" };
 
-  // Best-effort: search the element by the same elementText we used,
-  // and read its `value` attribute. If we can't find it (e.g. text was
-  // typed into the active field without elementText), we conservatively
-  // return ok=true to avoid false negatives.
-  if (!elementText) return { ok: true };
+  if (platform === "ios") {
+    // Live re-read via WDA — fetches the actual `value` attribute, not cache.
+    const liveValue = await iosReadElementValue(elementText);
+    if (liveValue === null) {
+      return { ok: true, skipped: true, reason: "element not found or no value attribute" };
+    }
+    // Substring check — an autocomplete picker may APPEND text (e.g. user typed
+    // "Par", picker filled "Paris, France"). The typed text should still be
+    // present as a substring. We also accept the inverse (live value is shorter
+    // than expected, meaning the picker truncated — also a flagging case if it
+    // diverges, so we strictly check inclusion of expected in live).
+    const ok = liveValue.includes(expected);
+    return ok ? { ok: true, actual: liveValue } : { ok: false, actual: liveValue };
+  }
 
+  // Android: best-effort fallback via the cached UI tree. The value is rarely
+  // populated for EditText elements in dumpsys (it lives in the IME), so most
+  // calls will return skipped. A future iteration could use
+  // `adb shell uiautomator dump` then re-parse to fetch live state.
   const el = findElementByText(elementText, deviceId);
-  if (!el) return { ok: true };
-
-  // The cached element doesn't carry the live value; we compare against what
-  // we know — for now we only check that *something* changed. A future
-  // iteration can call wdaGet on the element's `value` attribute directly.
-  // Without a live re-read, we conservatively accept (no false negatives).
-  const liveValue: string | undefined = (el as { value?: string }).value;
-  if (liveValue === undefined) return { ok: true };
-
-  // Substring check — autocomplete may APPEND text but the typed prefix
-  // should still appear. If neither prefix nor exact match holds, flag it.
-  const ok = liveValue.includes(expected) || expected.includes(liveValue);
-  return ok ? { ok: true } : { ok: false, actual: liveValue };
+  if (!el) return { ok: true, skipped: true, reason: "element not found in cache" };
+  const cached = (el as { value?: string }).value;
+  if (cached === undefined) return { ok: true, skipped: true, reason: "android live value unavailable" };
+  const ok = cached.includes(expected);
+  return ok ? { ok: true, actual: cached } : { ok: false, actual: cached };
 }
 
 export function registerTypeText(server: McpServer): void {
@@ -99,9 +105,11 @@ export function registerTypeText(server: McpServer): void {
           await new Promise((r) => setTimeout(r, 150));
           const check = await verifyTypedValue(text, element_text, dev.platform, dev.id);
           if (!check.ok) {
-            verificationNote = ` ⚠️ verify: la valeur du champ est "${check.actual}", attendu "${text}". Possible autocomplete picker actif.`;
+            verificationNote = ` ⚠️ verify: la valeur du champ est "${check.actual}", attendu "${text}". Possible autocomplete picker actif ou focus perdu.`;
+          } else if (check.skipped) {
+            verificationNote = ` ℹ️ verify: skippé (${check.reason}).`;
           } else {
-            verificationNote = " ✓ verify: valeur OK";
+            verificationNote = ` ✓ verify: "${check.actual}" contient "${text}".`;
           }
         }
 

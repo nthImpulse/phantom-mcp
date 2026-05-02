@@ -1,13 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { resolveDevice } from "../utils/device-manager.js";
-import {
-  iosClearClipboard,
-  iosClearStatusBar,
-  iosForceKeyboardQwerty,
-} from "../platforms/ios/simctl.js";
-import { ensureWdaRunning, iosDismissKeyboard, iosIsKeyboardVisible } from "../platforms/ios/wda.js";
-import { androidClearClipboard, androidDismissKeyboard } from "../platforms/android/adb.js";
+import { prepareDevice } from "../utils/device-prepare.js";
 import { logAction, getReportSuffix } from "../utils/tool-wrapper.js";
 
 /**
@@ -18,7 +12,7 @@ import { logAction, getReportSuffix } from "../utils/tool-wrapper.js";
  * What it does (all opt-out via flags):
  *   • dismiss the soft keyboard if it's visible (no-op otherwise)
  *   • clear the device clipboard (avoids stale text being pasted)
- *   • clear status bar overrides (avoids stale time/network spoofing)
+ *   • clear status bar overrides (avoids stale time/network spoofing) — iOS only
  *   • force keyboard layout to QWERTY on iOS (safety net for AZERTY locales)
  *
  * Each step is best-effort: a failure on one step doesn't prevent the others.
@@ -41,79 +35,15 @@ export function registerPrepareDevice(server: McpServer): void {
       if ("error" in result) return { content: [{ type: "text", text: result.error }], isError: true };
       const dev = result.device;
 
-      const steps: string[] = [];
-      const failures: string[] = [];
-
       try {
-        if (dev.platform === "ios") {
-          // iOS path
-          if (clear_clipboard) {
-            try {
-              await iosClearClipboard(dev.id);
-              steps.push("clipboard cleared");
-            } catch (e) {
-              failures.push(`clipboard: ${e instanceof Error ? e.message : e}`);
-            }
-          }
-
-          if (clear_status_bar) {
-            try {
-              await iosClearStatusBar(dev.id);
-              steps.push("status bar cleared");
-            } catch (e) {
-              failures.push(`status_bar: ${e instanceof Error ? e.message : e}`);
-            }
-          }
-
-          if (force_qwerty) {
-            try {
-              await iosForceKeyboardQwerty(dev.id);
-              steps.push("keyboard forced QWERTY");
-            } catch (e) {
-              failures.push(`qwerty: ${e instanceof Error ? e.message : e}`);
-            }
-          }
-
-          if (dismiss_keyboard) {
-            try {
-              const wda = await ensureWdaRunning(dev);
-              if (wda.ready) {
-                if (await iosIsKeyboardVisible()) {
-                  const dismissed = await iosDismissKeyboard();
-                  steps.push(dismissed ? "keyboard dismissed" : "keyboard dismiss attempted (still visible)");
-                } else {
-                  steps.push("keyboard not visible");
-                }
-              } else {
-                steps.push("keyboard check skipped (WDA not ready)");
-              }
-            } catch (e) {
-              failures.push(`dismiss_keyboard: ${e instanceof Error ? e.message : e}`);
-            }
-          }
-        } else {
-          // Android path
-          if (clear_clipboard) {
-            try {
-              await androidClearClipboard();
-              steps.push("clipboard cleared");
-            } catch (e) {
-              failures.push(`clipboard: ${e instanceof Error ? e.message : e}`);
-            }
-          }
-
-          if (dismiss_keyboard) {
-            try {
-              const dismissed = await androidDismissKeyboard();
-              steps.push(dismissed ? "keyboard dismissed" : "keyboard not visible");
-            } catch (e) {
-              failures.push(`dismiss_keyboard: ${e instanceof Error ? e.message : e}`);
-            }
-          }
-
-          if (clear_status_bar) steps.push("status bar override: skipped on Android (iOS-only)");
-          if (force_qwerty) steps.push("force QWERTY: skipped on Android (iOS-only)");
-        }
+        const { steps, failures } = await prepareDevice(dev, {
+          dismissKeyboard: dismiss_keyboard,
+          clearClipboard: clear_clipboard,
+          clearStatusBar: clear_status_bar,
+          forceQwerty: force_qwerty,
+          // Explicit prepare_device call: do the full job, including waking WDA
+          skipKeyboardIfWdaNotReady: false,
+        });
 
         const platform = dev.platform === "ios" ? "🍎" : "🤖";
         const summary = steps.length > 0 ? `\n  • ${steps.join("\n  • ")}` : " (no actions)";

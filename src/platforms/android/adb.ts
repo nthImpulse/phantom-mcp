@@ -437,12 +437,18 @@ export async function androidShake(): Promise<void> {
 /**
  * Detect if the Android soft keyboard is currently visible.
  * Uses `dumpsys input_method` and checks the mInputShown flag.
+ *
+ * Why a multiline-anchored regex?
+ *   `dumpsys input_method` may print `mInputShown` on multiple lines
+ *   (history, server vs view state). Matching loosely can pick up an old
+ *   "true" value that no longer reflects what the user sees. We anchor on
+ *   the start-of-line and tolerate leading whitespace to target the active
+ *   block printed by recent Android versions.
  */
 export async function androidIsKeyboardVisible(): Promise<boolean> {
   try {
     const out = await adb(["shell", "dumpsys", "input_method"]);
-    // mInputShown=true means the IME is currently visible to the user
-    return /mInputShown=true/.test(out);
+    return /^\s*mInputShown=true\b/m.test(out);
   } catch {
     return false;
   }

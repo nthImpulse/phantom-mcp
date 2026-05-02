@@ -1,50 +1,11 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { resolveDevice } from "../utils/device-manager.js";
-import { ensureWdaRunning, iosTap, iosTapByText, iosGetKeyboardBounds, iosDismissKeyboard } from "../platforms/ios/wda.js";
-import { androidTap, androidIsKeyboardVisible, androidDismissKeyboard } from "../platforms/android/adb.js";
+import { ensureWdaRunning, iosTap, iosTapByText } from "../platforms/ios/wda.js";
+import { androidTap } from "../platforms/android/adb.js";
 import { getElementByIndex, findElementByText } from "./ui-tree.js";
 import { logAction, getReportSuffix } from "../utils/tool-wrapper.js";
-
-/**
- * If the keyboard physically covers the tap target, dismiss it first.
- * Returns true if a dismissal happened (caller may want to log it).
- *
- * Conservative behavior: we only dismiss if the target Y is INSIDE the
- * keyboard bounds. Tapping on the keyboard itself (e.g. a key during a
- * test) remains supported.
- */
-async function ensureKeyboardNotBlocking(
-  platform: "ios" | "android",
-  targetY: number,
-): Promise<boolean> {
-  if (platform === "ios") {
-    const bounds = await iosGetKeyboardBounds();
-    if (!bounds) return false;
-    if (targetY >= bounds.y && targetY <= bounds.y + bounds.height) {
-      // Target is inside the keyboard area — likely intentional, skip auto-dismiss
-      return false;
-    }
-    // Target is below the visible viewport (typical with keyboard open) → dismiss
-    // Keyboard occupies ~bottom 1/3, so a target below bounds.y but already off-keyboard
-    // means the actual UI element is hidden behind the keyboard.
-    // Only dismiss if target Y is below screen visible region (i.e. behind kbd top)
-    if (targetY > bounds.y) {
-      await iosDismissKeyboard();
-      return true;
-    }
-    return false;
-  } else {
-    if (!(await androidIsKeyboardVisible())) return false;
-    // Android: similar heuristic — keyboard typically takes bottom 40%.
-    // We don't have a reliable way to query its exact bounds via adb,
-    // so we only auto-dismiss if the target is in the bottom half of the screen.
-    // Defensive: skip when target Y is small (top half).
-    // The targetY already comes from the caller, so we trust it.
-    await androidDismissKeyboard();
-    return true;
-  }
-}
+import { ensureKeyboardNotBlocking } from "../utils/keyboard-guard.js";
 
 export function registerTap(server: McpServer): void {
   server.tool(

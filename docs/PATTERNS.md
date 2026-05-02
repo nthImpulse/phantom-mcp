@@ -148,14 +148,14 @@ tap(...) → tap(...) → tap(...) → get_ui_tree()
 
 ---
 
-## kill+relaunch pour resync state Zustand/store
+## kill+relaunch pour resync un store local après mutation serveur
 
 ### Pattern
-Quand une mutation côté serveur (Edge Function, RPC) doit refresh le store local mais que l'app affiche des données stale.
+Quand une mutation côté serveur (RPC, edge function, webhook RevenueCat, etc.) doit refresh un store local (Zustand, Redux, MobX) mais que l'app affiche encore des données stale.
 
 ### Workflow
 ```
-1. Action qui mute le serveur                (ex: Save Changes EditItinerary)
+1. Action qui mute le serveur                (ex: Save sur un écran d'édition)
 2. kill_app(bundle_id)                       → fermer l'app
 3. launch_app(bundle_id)                     → la relancer
 4. Naviguer vers l'écran à vérifier
@@ -163,13 +163,13 @@ Quand une mutation côté serveur (Edge Function, RPC) doit refresh le store loc
 ```
 
 ### Quand l'utiliser
-- Après upgrade premium (RC event)
-- Après Save Changes (EditItinerary, EditPet, EditProfile)
-- Après mutation cross-screen (delete trip qui doit retirer du Dashboard)
-- Après création d'une entité (animal, traveler) qui doit apparaître ailleurs
+- Après un upgrade d'abonnement (event tiers comme RevenueCat / Stripe)
+- Après un Save sur un formulaire d'édition (profil, paramètres, contenu)
+- Après une mutation cross-screen (delete d'une ressource qui doit disparaître ailleurs)
+- Après création d'une entité qui doit apparaître dans une autre vue
 
 ### Note
-C'est un workaround pour un bug app (#17 store stale dans Pawfect), mais aussi une bonne pratique de test pour valider la **persistence réelle** vs juste le state mémoire.
+Au-delà du contournement d'un éventuel bug de sync de store, c'est aussi une **discipline de test** : ça force à valider la persistance réelle (DB → app froide), pas juste le state en mémoire après une mutation.
 
 ---
 
